@@ -21,6 +21,21 @@ func init() {
 	omniviewPublicKey = ed25519.PublicKey(key)
 }
 
+// SetPublicKey overrides the embedded public key used for artifact verification.
+// The key must be a hex-encoded Ed25519 public key (64 hex characters).
+func SetPublicKey(hexKey string) error {
+	key, err := hex.DecodeString(hexKey)
+	if err != nil {
+		return fmt.Errorf("failed to decode public key hex: %w", err)
+	}
+	if len(key) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid public key length: got %d bytes, want %d", len(key), ed25519.PublicKeySize)
+	}
+	OmniviewPublicKeyHex = hexKey
+	omniviewPublicKey = ed25519.PublicKey(key)
+	return nil
+}
+
 // VerifyArtifactSignature verifies that the given checksum was signed by the Omniview signing key.
 func VerifyArtifactSignature(checksum, signatureB64 string) error {
 	if signatureB64 == "" {
