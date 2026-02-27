@@ -17,6 +17,9 @@ var (
 
 	// ErrChecksumMismatch is returned when a downloaded file's checksum doesn't match.
 	ErrChecksumMismatch = errors.New("checksum mismatch")
+
+	// ErrEmptyVersion is returned when a version string is empty.
+	ErrEmptyVersion = errors.New("version string is empty")
 )
 
 // APIError represents an error response from the API.

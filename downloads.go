@@ -76,6 +76,10 @@ func (c *Client) GetDailyDownloads(ctx context.Context, pluginID string, days in
 // DownloadPlugin downloads, verifies, and returns the temp file path for a plugin version.
 // It auto-detects the current platform architecture.
 func (c *Client) DownloadPlugin(ctx context.Context, pluginID, version string) (string, error) {
+	if version == "" {
+		return "", fmt.Errorf("%w: plugin %q", ErrEmptyVersion, pluginID)
+	}
+
 	// 1. Get version info with artifacts
 	v, err := c.GetVersion(ctx, pluginID, version)
 	if err != nil {

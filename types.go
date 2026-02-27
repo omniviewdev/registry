@@ -4,25 +4,28 @@ import "time"
 
 // Plugin represents a plugin in the registry.
 type Plugin struct {
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	Description   string       `json:"description"`
-	IconURL       string       `json:"icon_url"`
-	Category      string       `json:"category"`
-	Tags          []string     `json:"tags"`
-	License       string       `json:"license"`
-	Repository    string       `json:"repository"`
-	URL           string       `json:"url"`
-	Readme        string       `json:"readme"`
-	Official      bool         `json:"official"`
-	Featured      bool         `json:"featured"`
-	DownloadCount int64        `json:"download_count"`
-	AverageRating float64      `json:"average_rating"`
-	ReviewCount   int64        `json:"review_count"`
-	PublisherID   string       `json:"publisher_id"`
-	Author        PluginAuthor `json:"author"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	IconURL       string         `json:"icon_url"`
+	Category      string         `json:"category"`
+	Tags          []string       `json:"tags"`
+	License       string         `json:"license"`
+	Repository    string         `json:"repository"`
+	URL           string         `json:"url"`
+	Readme        string         `json:"readme"`
+	Official      bool           `json:"official"`
+	Featured      bool           `json:"featured"`
+	DownloadCount int64          `json:"download_count"`
+	AverageRating float64        `json:"average_rating"`
+	ReviewCount   int64          `json:"review_count"`
+	PublisherID   string         `json:"publisher_id"`
+	PublisherName string         `json:"publisher_name"`
+	LatestVersion string         `json:"latest_version"`
+	Version       *PluginVersion `json:"version,omitempty"`
+	Author        PluginAuthor   `json:"author"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 }
 
 // PluginAuthor identifies the author of a plugin.
