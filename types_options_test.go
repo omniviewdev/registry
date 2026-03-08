@@ -36,15 +36,42 @@ func TestListOptions_buildQuery_allFields(t *testing.T) {
 		t.Fatalf("query should start with ?, got %q", q)
 	}
 
-	// Check that all params appear (order doesn't matter in URL encoding)
+	// Check that all original params appear (order doesn't matter in URL encoding)
 	checks := []string{
 		"page=2",
 		"per_page=25",
 		"order_field=created_at",
 		"order_direction=desc",
-		"search=kubernetes",
+		"q=kubernetes",
 		"category=cloud",
 		"featured=true",
+	}
+	for _, c := range checks {
+		if !contains(q, c) {
+			t.Errorf("query %q missing %q", q, c)
+		}
+	}
+	// Status and PluginID should not appear when empty
+	if contains(q, "status=") {
+		t.Error("empty status should not appear")
+	}
+	if contains(q, "plugin_id=") {
+		t.Error("empty plugin_id should not appear")
+	}
+}
+
+func TestListOptions_buildQuery_statusAndPluginID(t *testing.T) {
+	opts := &ListOptions{
+		Status:   "pending",
+		PluginID: "my-plugin",
+	}
+	q := opts.buildQuery()
+	if q == "" {
+		t.Fatal("expected non-empty query string")
+	}
+	checks := []string{
+		"status=pending",
+		"plugin_id=my-plugin",
 	}
 	for _, c := range checks {
 		if !contains(q, c) {
@@ -59,7 +86,7 @@ func TestListOptions_buildQuery_partial(t *testing.T) {
 	if !contains(q, "page=1") {
 		t.Error("missing page param")
 	}
-	if !contains(q, "search=hello+world") && !contains(q, "search=hello%20world") {
+	if !contains(q, "q=hello+world") && !contains(q, "q=hello%20world") {
 		t.Error("missing or incorrectly encoded search param")
 	}
 	if contains(q, "per_page") {

@@ -16,6 +16,8 @@ type ListOptions struct {
 	Search         string
 	Category       string
 	Featured       bool
+	Status         string
+	PluginID       string
 }
 
 func (o *ListOptions) buildQuery() string {
@@ -36,13 +38,19 @@ func (o *ListOptions) buildQuery() string {
 		q.Set("order_direction", o.OrderDirection)
 	}
 	if o.Search != "" {
-		q.Set("search", o.Search)
+		q.Set("q", o.Search)
 	}
 	if o.Category != "" {
 		q.Set("category", o.Category)
 	}
 	if o.Featured {
 		q.Set("featured", "true")
+	}
+	if o.Status != "" {
+		q.Set("status", o.Status)
+	}
+	if o.PluginID != "" {
+		q.Set("plugin_id", o.PluginID)
 	}
 	encoded := q.Encode()
 	if encoded == "" {

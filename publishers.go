@@ -14,6 +14,15 @@ func (c *Client) GetPublisher(ctx context.Context, slug string) (*Publisher, err
 	return &p, nil
 }
 
+// CheckPublisherAccess returns the caller's permissions for a publisher.
+func (c *Client) CheckPublisherAccess(ctx context.Context, slug string) (*PublisherAccess, error) {
+	var access PublisherAccess
+	if err := c.get(ctx, fmt.Sprintf("/v1/publishers/%s/can-i", slug), &access); err != nil {
+		return nil, err
+	}
+	return &access, nil
+}
+
 // ListPublisherPlugins returns plugins for a publisher by slug.
 func (c *Client) ListPublisherPlugins(ctx context.Context, slug string, opts *ListOptions) (ListResult[Plugin], error) {
 	path := fmt.Sprintf("/v1/publishers/%s/plugins", slug) + opts.buildQuery()

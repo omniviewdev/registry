@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://api.omniview.dev"
+	defaultBaseURL = "https://marketplace.omniview.dev"
 	defaultTimeout = 30 * time.Second
 )
 
@@ -18,6 +18,7 @@ const (
 type Client struct {
 	baseURL    string
 	token      string
+	apiKey     string
 	httpClient *http.Client
 }
 
@@ -32,6 +33,11 @@ func WithBaseURL(url string) Option {
 // WithToken sets the JWT bearer token for authenticated requests.
 func WithToken(token string) Option {
 	return func(c *Client) { c.token = token }
+}
+
+// WithAPIKey sets the API key for publisher-scoped requests.
+func WithAPIKey(key string) Option {
+	return func(c *Client) { c.apiKey = key }
 }
 
 // WithHTTPClient sets a custom HTTP client.
@@ -53,6 +59,11 @@ func NewClient(opts ...Option) *Client {
 	return c
 }
 
+// BaseURL returns the client's API base URL.
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
 // Health checks the API health endpoint.
 func (c *Client) Health(ctx context.Context) (*HealthStatus, error) {
 	var hs HealthStatus
@@ -69,6 +80,26 @@ func (c *Client) get(ctx context.Context, path string, dst interface{}) error {
 
 // post performs a POST request with a JSON body and decodes the response data into dst.
 func (c *Client) post(ctx context.Context, path string, body interface{}, dst interface{}) error {
+	return c.doJSON(ctx, http.MethodPost, path, body, dst)
+}
+
+// put performs a PUT request with a JSON body and decodes the response data into dst.
+func (c *Client) put(ctx context.Context, path string, body interface{}, dst interface{}) error {
+	return c.doJSON(ctx, http.MethodPut, path, body, dst)
+}
+
+// patch performs a PATCH request with a JSON body and decodes the response data into dst.
+func (c *Client) patch(ctx context.Context, path string, body interface{}, dst interface{}) error {
+	return c.doJSON(ctx, http.MethodPatch, path, body, dst)
+}
+
+// delete performs a DELETE request and decodes the response data into dst.
+func (c *Client) del(ctx context.Context, path string, dst interface{}) error {
+	return c.do(ctx, http.MethodDelete, path, nil, dst)
+}
+
+// doJSON marshals body to JSON and performs the request.
+func (c *Client) doJSON(ctx context.Context, method, path string, body interface{}, dst interface{}) error {
 	var r io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -77,7 +108,7 @@ func (c *Client) post(ctx context.Context, path string, body interface{}, dst in
 		}
 		r = bytesReader(data)
 	}
-	return c.do(ctx, http.MethodPost, path, r, dst)
+	return c.do(ctx, method, path, r, dst)
 }
 
 // do performs an HTTP request and decodes the API envelope response.
@@ -92,9 +123,7 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, ds
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	c.setAuthHeader(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -142,9 +171,7 @@ func (c *Client) getList(ctx context.Context, path string, dst interface{}) (*Pa
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	c.setAuthHeader(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -197,4 +224,14 @@ func (r *bytesReaderImpl) Read(p []byte) (int, error) {
 	n := copy(p, r.data[r.pos:])
 	r.pos += n
 	return n, nil
+}
+
+// setAuthHeader sets the appropriate authentication header on the request.
+// API key takes precedence over JWT token.
+func (c *Client) setAuthHeader(req *http.Request) {
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	} else if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 }

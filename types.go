@@ -93,6 +93,17 @@ type Publisher struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// PublisherAccess describes the caller's permissions for a publisher.
+type PublisherAccess struct {
+	PublisherID      string `json:"publisher_id"`
+	Slug             string `json:"slug"`
+	Member           bool   `json:"member"`
+	Role             string `json:"role"`
+	CanPublish       bool   `json:"can_publish"`
+	CanManagePlugins bool   `json:"can_manage_plugins"`
+	CanManageMembers bool   `json:"can_manage_members"`
+}
+
 // DownloadStats holds aggregate download statistics for a plugin.
 type DownloadStats struct {
 	PluginID   string             `json:"plugin_id"`

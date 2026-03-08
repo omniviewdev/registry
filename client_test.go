@@ -216,6 +216,59 @@ func fakeAPI(t *testing.T) *httptest.Server {
 		})
 	})
 
+	// Submissions
+	mux.HandleFunc("/v1/publishers/omniview/submissions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			writeJSON(w, map[string]interface{}{
+				"success": true,
+				"data": []map[string]interface{}{
+					{
+						"id":           "sub-1",
+						"publisher_id": "pub-1",
+						"plugin_id":    "test-plugin",
+						"version":      "2.0.0",
+						"status":       "pending",
+					},
+				},
+				"pagination": map[string]interface{}{
+					"page": 1, "per_page": 10, "total": 1, "total_pages": 1,
+				},
+			})
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	mux.HandleFunc("/v1/submissions/sub-1", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]interface{}{
+			"success": true,
+			"data": map[string]interface{}{
+				"id":           "sub-1",
+				"publisher_id": "pub-1",
+				"plugin_id":    "test-plugin",
+				"version":      "2.0.0",
+				"status":       "pending",
+			},
+		})
+	})
+
+	mux.HandleFunc("/v1/submissions/sub-1/withdraw", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			writeJSON(w, map[string]interface{}{
+				"success": true,
+				"data": map[string]interface{}{
+					"id":           "sub-1",
+					"publisher_id": "pub-1",
+					"plugin_id":    "test-plugin",
+					"version":      "2.0.0",
+					"status":       "withdrawn",
+				},
+			})
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	})
+
 	// 404 catch-all
 	mux.HandleFunc("/v1/plugins/nonexistent", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -518,6 +571,75 @@ func TestClient_RecordDownload(t *testing.T) {
 	err := c.RecordDownload(context.Background(), "test-plugin", "1.0.0", "darwin_arm64")
 	if err != nil {
 		t.Fatalf("RecordDownload() error: %v", err)
+	}
+}
+
+func TestClient_ListSubmissions(t *testing.T) {
+	srv := fakeAPI(t)
+	defer srv.Close()
+
+	c := NewClient(WithBaseURL(srv.URL))
+	result, err := c.ListSubmissions(context.Background(), "omniview", nil)
+	if err != nil {
+		t.Fatalf("ListSubmissions() error: %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 submission, got %d", len(result.Items))
+	}
+	if result.Items[0].ID != "sub-1" {
+		t.Fatalf("expected sub-1, got %s", result.Items[0].ID)
+	}
+	if result.Items[0].Status != "pending" {
+		t.Fatalf("expected pending status, got %s", result.Items[0].Status)
+	}
+}
+
+func TestClient_ListSubmissions_withOptions(t *testing.T) {
+	srv := fakeAPI(t)
+	defer srv.Close()
+
+	c := NewClient(WithBaseURL(srv.URL))
+	result, err := c.ListSubmissions(context.Background(), "omniview", &ListOptions{
+		Status:   "pending",
+		PluginID: "test-plugin",
+		PerPage:  5,
+	})
+	if err != nil {
+		t.Fatalf("ListSubmissions() error: %v", err)
+	}
+	if len(result.Items) == 0 {
+		t.Fatal("expected at least 1 submission")
+	}
+}
+
+func TestClient_GetSubmission(t *testing.T) {
+	srv := fakeAPI(t)
+	defer srv.Close()
+
+	c := NewClient(WithBaseURL(srv.URL))
+	sub, err := c.GetSubmission(context.Background(), "sub-1")
+	if err != nil {
+		t.Fatalf("GetSubmission() error: %v", err)
+	}
+	if sub.ID != "sub-1" {
+		t.Fatalf("expected sub-1, got %s", sub.ID)
+	}
+	if sub.PluginID != "test-plugin" {
+		t.Fatalf("expected test-plugin, got %s", sub.PluginID)
+	}
+}
+
+func TestClient_WithdrawSubmission(t *testing.T) {
+	srv := fakeAPI(t)
+	defer srv.Close()
+
+	c := NewClient(WithBaseURL(srv.URL))
+	sub, err := c.WithdrawSubmission(context.Background(), "sub-1")
+	if err != nil {
+		t.Fatalf("WithdrawSubmission() error: %v", err)
+	}
+	if sub.Status != "withdrawn" {
+		t.Fatalf("expected withdrawn status, got %s", sub.Status)
 	}
 }
 
