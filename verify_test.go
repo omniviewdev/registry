@@ -11,9 +11,51 @@ import (
 // swapPublicKey replaces the package-level public key for testing and returns a restore function.
 func swapPublicKey(t *testing.T, pub ed25519.PublicKey) {
 	t.Helper()
-	original := omniviewPublicKey
-	omniviewPublicKey = pub
-	t.Cleanup(func() { omniviewPublicKey = original })
+	original, originalExtra := omniviewPublicKey, additionalKeys
+	omniviewPublicKey, additionalKeys = pub, nil
+	t.Cleanup(func() { omniviewPublicKey, additionalKeys = original, originalExtra })
+}
+
+func TestVerifyAdditionalKey(t *testing.T) {
+	primary, _, _ := ed25519.GenerateKey(rand.Reader)
+	extraPub, extraPriv, _ := ed25519.GenerateKey(rand.Reader)
+	swapPublicKey(t, primary)
+
+	checksum := "abc123"
+	sigB64 := base64.StdEncoding.EncodeToString(ed25519.Sign(extraPriv, []byte(checksum)))
+
+	if err := VerifyArtifactSignature(checksum, sigB64); err != ErrInvalidSignature {
+		t.Fatalf("expected ErrInvalidSignature before the key is added, got: %v", err)
+	}
+	if err := AddPublicKey(hex.EncodeToString(extraPub)); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddPublicKey(hex.EncodeToString(extraPub)); err != nil {
+		t.Fatal(err)
+	}
+	if got := TrustedPublicKeys(); len(got) != 2 || got[1] != hex.EncodeToString(extraPub) {
+		t.Fatalf("unexpected trusted keys: %v", got)
+	}
+	if err := VerifyArtifactSignature(checksum, sigB64); err != nil {
+		t.Fatalf("expected signature from additional key to pass: %v", err)
+	}
+
+	// Replacing the primary key keeps the additional keys.
+	newPrimary, _, _ := ed25519.GenerateKey(rand.Reader)
+	if err := SetPublicKey(hex.EncodeToString(newPrimary)); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyArtifactSignature(checksum, sigB64); err != nil {
+		t.Fatalf("expected additional key to survive SetPublicKey: %v", err)
+	}
+}
+
+func TestAddPublicKeyRejectsBadInput(t *testing.T) {
+	for _, in := range []string{"", "zz", "abcd"} {
+		if err := AddPublicKey(in); err == nil {
+			t.Errorf("AddPublicKey(%q): expected error", in)
+		}
+	}
 }
 
 func TestVerifyValidSignature(t *testing.T) {
