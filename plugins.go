@@ -20,6 +20,7 @@ func (c *Client) ListPlugins(ctx context.Context, opts *ListOptions) (ListResult
 }
 
 // GetPlugin returns a single plugin by ID.
+// LatestVersion is the highest published semantic version, not the last approved release.
 func (c *Client) GetPlugin(ctx context.Context, pluginID string) (*Plugin, error) {
 	var p Plugin
 	if err := c.get(ctx, fmt.Sprintf("/v1/plugins/%s", pluginID), &p); err != nil {

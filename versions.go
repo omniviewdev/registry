@@ -5,7 +5,8 @@ import (
 	"fmt"
 )
 
-// ListVersions returns a paginated list of versions for a plugin.
+// ListVersions returns published versions in descending semantic-version precedence.
+// Approval and publication dates do not determine the latest version.
 func (c *Client) ListVersions(ctx context.Context, pluginID string, opts *ListOptions) (ListResult[PluginVersion], error) {
 	path := fmt.Sprintf("/v1/plugins/%s/versions", pluginID) + opts.buildQuery()
 	var items []PluginVersion
