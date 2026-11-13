@@ -18,6 +18,7 @@ type ListOptions struct {
 	Featured       bool
 	Status         string
 	PluginID       string
+	Channel        string
 }
 
 func (o *ListOptions) buildQuery() string {
@@ -51,6 +52,9 @@ func (o *ListOptions) buildQuery() string {
 	}
 	if o.PluginID != "" {
 		q.Set("plugin_id", o.PluginID)
+	}
+	if o.Channel != "" {
+		q.Set("channel", o.Channel)
 	}
 	encoded := q.Encode()
 	if encoded == "" {

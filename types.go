@@ -40,6 +40,7 @@ type PluginVersion struct {
 	ID            string              `json:"id"`
 	PluginID      string              `json:"plugin_id"`
 	Version       string              `json:"version"`
+	Channel       string              `json:"channel"`
 	Description   string              `json:"description"`
 	Changelog     string              `json:"changelog"`
 	MinIDEVersion string              `json:"min_ide_version"`
