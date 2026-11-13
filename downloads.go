@@ -74,7 +74,8 @@ func (c *Client) GetDailyDownloads(ctx context.Context, pluginID string, days in
 }
 
 // DownloadPlugin downloads, verifies, and returns the temp file path for a plugin version.
-// It auto-detects the current platform architecture.
+// It auto-detects the current platform architecture and downloads in 16 MiB
+// ranges. The artifact server must support HTTP range requests.
 func (c *Client) DownloadPlugin(ctx context.Context, pluginID, version string) (string, error) {
 	if version == "" {
 		return "", fmt.Errorf("%w: plugin %q", ErrEmptyVersion, pluginID)
@@ -108,35 +109,17 @@ func (c *Client) DownloadPlugin(ctx context.Context, pluginID, version string) (
 	}
 	tmpPath := tmpFile.Name()
 
-	dlReq, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
-	if err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("creating download request: %w", err)
-	}
-
-	dlResp, err := c.httpClient.Do(dlReq)
-	if err != nil {
+	hasher := sha256.New()
+	w := io.MultiWriter(tmpFile, hasher)
+	if err := c.downloadRanges(ctx, downloadURL, artifact.Size, w); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("downloading artifact: %w", err)
 	}
-	defer dlResp.Body.Close()
-
-	if dlResp.StatusCode != http.StatusOK {
-		tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
-		return "", &APIError{StatusCode: dlResp.StatusCode, Message: "download failed"}
+		return "", fmt.Errorf("closing artifact: %w", err)
 	}
-
-	hasher := sha256.New()
-	w := io.MultiWriter(tmpFile, hasher)
-	if _, err := io.Copy(w, dlResp.Body); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("writing artifact: %w", err)
-	}
-	tmpFile.Close()
 
 	// 6. Verify checksum
 	checksum := hex.EncodeToString(hasher.Sum(nil))
@@ -152,4 +135,58 @@ func (c *Client) DownloadPlugin(ctx context.Context, pluginID, version string) (
 	}
 
 	return tmpPath, nil
+}
+
+// downloadRanges bounds every response and validates that the server returned
+// exactly the requested bytes from one consistently sized object.
+func (c *Client) downloadRanges(ctx context.Context, url string, expectedSize int64, dst io.Writer) error {
+	const chunkSize int64 = 16 << 20
+	var offset, total int64
+	for {
+		end := offset + chunkSize - 1
+		if total > 0 && end >= total {
+			end = total - 1
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, end))
+		req.Header.Set("Accept-Encoding", "identity")
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		var start, last, size int64
+		if resp.StatusCode != http.StatusPartialContent {
+			resp.Body.Close()
+			return &APIError{StatusCode: resp.StatusCode, Message: "range download failed"}
+		}
+		contentRange := resp.Header.Get("Content-Range")
+		n, parseErr := fmt.Sscanf(contentRange, "bytes %d-%d/%d", &start, &last, &size)
+		if parseErr != nil || n != 3 || contentRange != fmt.Sprintf("bytes %d-%d/%d", start, last, size) ||
+			start != offset || size <= 0 || last < start || last >= size ||
+			last != min(end, size-1) || (total != 0 && size != total) ||
+			(expectedSize > 0 && size != expectedSize) {
+			resp.Body.Close()
+			return fmt.Errorf("invalid Content-Range %q", contentRange)
+		}
+		total = size
+		length := last - start + 1
+		written, copyErr := io.Copy(dst, io.LimitReader(resp.Body, length+1))
+		closeErr := resp.Body.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if written != length {
+			return fmt.Errorf("range body has %d bytes, expected %d", written, length)
+		}
+		offset += length
+		if offset == total {
+			return nil
+		}
+	}
 }

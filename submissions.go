@@ -44,6 +44,18 @@ type UploadURLResponse struct {
 	URLs map[string]string `json:"urls"`
 }
 
+// MultipartUpload contains a presigned URL for each part, in part-number order.
+type MultipartUpload struct {
+	UploadID string   `json:"upload_id"`
+	PartURLs []string `json:"part_urls"`
+}
+
+// MultipartPart identifies an uploaded part by its one-based number and S3 ETag.
+type MultipartPart struct {
+	PartNumber int    `json:"part_number"`
+	ETag       string `json:"etag"`
+}
+
 // CreateSubmission creates a new plugin submission for a publisher.
 func (c *Client) CreateSubmission(ctx context.Context, publisherSlug string, req *CreateSubmissionRequest) (*Submission, error) {
 	var sub Submission
@@ -106,4 +118,26 @@ func (c *Client) GenerateUploadURLs(ctx context.Context, id string, architecture
 		return nil, err
 	}
 	return &resp, nil
+}
+
+// InitMultipartUpload starts an upload. Use 64 MiB parts except for the last.
+func (c *Client) InitMultipartUpload(ctx context.Context, id, architecture string, partCount int) (*MultipartUpload, error) {
+	var upload MultipartUpload
+	body := map[string]interface{}{"architecture": architecture, "part_count": partCount}
+	if err := c.post(ctx, fmt.Sprintf("/v1/submissions/%s/multipart/init", id), body, &upload); err != nil {
+		return nil, err
+	}
+	return &upload, nil
+}
+
+// CompleteMultipartUpload completes an upload with the ETag returned for each part.
+func (c *Client) CompleteMultipartUpload(ctx context.Context, id, architecture, uploadID string, parts []MultipartPart) error {
+	body := map[string]interface{}{"architecture": architecture, "upload_id": uploadID, "parts": parts}
+	return c.post(ctx, fmt.Sprintf("/v1/submissions/%s/multipart/complete", id), body, nil)
+}
+
+// AbortMultipartUpload releases an incomplete upload.
+func (c *Client) AbortMultipartUpload(ctx context.Context, id, architecture, uploadID string) error {
+	body := map[string]string{"architecture": architecture, "upload_id": uploadID}
+	return c.post(ctx, fmt.Sprintf("/v1/submissions/%s/multipart/abort", id), body, nil)
 }

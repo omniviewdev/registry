@@ -1,12 +1,16 @@
 package registry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 // fakeAPI returns a test server that mimics the real API envelope format.
@@ -678,5 +682,100 @@ func TestClient_ReleaseChannels(t *testing.T) {
 	channels, err := c.ListChannels(context.Background(), "test-plugin")
 	if err != nil || len(channels) != 1 || channels[0].Channel != "feature-abc" || channels[0].Branch != "feature/abc" || channels[0].CreatedAt.IsZero() {
 		t.Fatalf("channels = %#v, error = %v", channels, err)
+	}
+}
+
+func TestDownloadRanges(t *testing.T) {
+	data := bytes.Repeat([]byte("a"), (16<<20)+3)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.ServeContent(w, r, "artifact", time.Time{}, bytes.NewReader(data))
+	}))
+	defer server.Close()
+	var result bytes.Buffer
+	err := NewClient().downloadRanges(context.Background(), server.URL, int64(len(data)), &result)
+	if err != nil || !bytes.Equal(result.Bytes(), data) || requests != 2 {
+		t.Fatalf("download: err=%v, bytes=%d, requests=%d", err, result.Len(), requests)
+	}
+}
+
+func TestDownloadRangesRejectsInvalidResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name, contentRange, body string
+		status                   int
+		size                     int64
+	}{
+		{"ignored range", "", "abc", http.StatusOK, 3},
+		{"wrong start", "bytes 1-2/3", "bc", http.StatusPartialContent, 3},
+		{"wrong size", "bytes 0-2/3", "abc", http.StatusPartialContent, 4},
+		{"truncated body", "bytes 0-2/3", "ab", http.StatusPartialContent, 3},
+		{"oversized body", "bytes 0-2/3", "abcd", http.StatusPartialContent, 3},
+		{"trailing content range", "bytes 0-2/3 junk", "abc", http.StatusPartialContent, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasPrefix(r.Header.Get("Range"), "bytes=0-") {
+					t.Errorf("missing range: %q", r.Header.Get("Range"))
+				}
+				w.Header().Set("Content-Range", tc.contentRange)
+				w.WriteHeader(tc.status)
+				fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			if err := NewClient().downloadRanges(context.Background(), server.URL, tc.size, &bytes.Buffer{}); err == nil {
+				t.Fatal("expected invalid response to fail")
+			}
+		})
+	}
+}
+
+func TestMultipartSubmissionMethods(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("X-API-Key") != "secret" {
+			t.Errorf("unexpected method or authentication")
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body["architecture"] != "linux_amd64" {
+			t.Errorf("unexpected body: %v", body)
+		}
+		paths = append(paths, r.URL.Path)
+		if strings.HasSuffix(r.URL.Path, "/init") {
+			if body["part_count"] != float64(2) {
+				t.Errorf("unexpected part count: %v", body)
+			}
+			writeJSON(w, map[string]interface{}{"success": true, "data": map[string]interface{}{"upload_id": "upload", "part_urls": []string{"one", "two"}}})
+		} else {
+			if body["upload_id"] != "upload" {
+				t.Errorf("unexpected upload ID: %v", body)
+			}
+			if strings.HasSuffix(r.URL.Path, "/complete") {
+				parts, ok := body["parts"].([]interface{})
+				if !ok || len(parts) != 1 || parts[0].(map[string]interface{})["etag"] != `"etag"` {
+					t.Errorf("unexpected parts: %v", body["parts"])
+				}
+			}
+			writeJSON(w, map[string]interface{}{"success": true})
+		}
+	}))
+	defer server.Close()
+	client := NewClient(WithBaseURL(server.URL), WithAPIKey("secret"))
+	ctx := context.Background()
+	upload, err := client.InitMultipartUpload(ctx, "submission", "linux_amd64", 2)
+	if err != nil || upload.UploadID != "upload" || len(upload.PartURLs) != 2 {
+		t.Fatalf("init: %v, %v", upload, err)
+	}
+	if err := client.CompleteMultipartUpload(ctx, "submission", "linux_amd64", upload.UploadID, []MultipartPart{{PartNumber: 1, ETag: `"etag"`}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.AbortMultipartUpload(ctx, "submission", "linux_amd64", upload.UploadID); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 3 || paths[0] != "/v1/submissions/submission/multipart/init" || paths[1] != "/v1/submissions/submission/multipart/complete" || paths[2] != "/v1/submissions/submission/multipart/abort" {
+		t.Fatalf("unexpected paths: %v", paths)
 	}
 }
