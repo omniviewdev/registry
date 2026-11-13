@@ -654,3 +654,29 @@ func TestClient_WithHTTPClient(t *testing.T) {
 		t.Fatalf("Health() with custom client error: %v", err)
 	}
 }
+
+func TestClient_ReleaseChannels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/plugins/test-plugin/versions":
+			if got := r.URL.Query().Get("channel"); got != "feature-abc" {
+				t.Errorf("channel = %q", got)
+			}
+			writeJSON(w, map[string]interface{}{"success": true, "data": []map[string]string{{"version": "1.0.1-feature-abc.1.1", "channel": "feature-abc"}}})
+		case "/v1/plugins/test-plugin/channels":
+			writeJSON(w, map[string]interface{}{"success": true, "data": []map[string]string{{"channel": "feature-abc", "branch": "feature/abc", "status": "active", "created_at": "2026-01-01T00:00:00Z"}}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := NewClient(WithBaseURL(srv.URL))
+	versions, err := c.ListVersions(context.Background(), "test-plugin", &ListOptions{Channel: "feature-abc"})
+	if err != nil || len(versions.Items) != 1 || versions.Items[0].Channel != "feature-abc" {
+		t.Fatalf("versions = %#v, error = %v", versions, err)
+	}
+	channels, err := c.ListChannels(context.Background(), "test-plugin")
+	if err != nil || len(channels) != 1 || channels[0].Channel != "feature-abc" || channels[0].Branch != "feature/abc" || channels[0].CreatedAt.IsZero() {
+		t.Fatalf("channels = %#v, error = %v", channels, err)
+	}
+}
